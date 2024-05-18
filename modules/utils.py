@@ -1,6 +1,5 @@
 import time
-import math
-import os
+from datetime import timedelta
 from pyrogram.errors import FloodWait
 
 class Timer:
@@ -14,55 +13,48 @@ class Timer:
             return True
         return False
 
-
-from datetime import datetime,timedelta
-
-#lets do calculations
-def hrb(value, digits= 2, delim= "", postfix=""):
-    """Return a human-readable file size.
-    """
+def hrb(value, digits=2, delim="", postfix=""):
+    """Return a human-readable file size."""
     if value is None:
         return None
-    chosen_unit = "B"
-    for unit in ("KiB", "MiB", "GiB", "TiB"):
-        if value > 1000:
-            value /= 1024
-            chosen_unit = unit
-        else:
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024:
             break
-    return f"{value:.{digits}f}" + delim + chosen_unit + postfix
+        value /= 1024
+    return f"{value:.{digits}f}{delim}{unit}{postfix}"
 
-def hrt(seconds, precision = 0):
-    """Return a human-readable time delta as a string.
-    """
-    pieces = []
-    value = timedelta(seconds=seconds)
+def hrt(seconds, precision=0):
+    """Return a human-readable time delta as a string."""
+    periods = [
+        ('d', 86400),  # 60 * 60 * 24
+        ('h', 3600),   # 60 * 60
+        ('m', 60),
+        ('s', 1),
+    ]
+
+    time_str = []
+    for period, period_seconds in periods:
+        if seconds >= period_seconds or (period == 's' and not time_str):
+            period_value, seconds = divmod(seconds, period_seconds)
+            time_str.append(f"{period_value}{period}")
+
+    if precision > 0:
+        time_str = time_str[:precision]
+
+    return ''.join(time_str)
+
+def create_custom_bar(current, total):
+    progress_chars = list("KUNAL")
+    progress_length = len(progress_chars)
+    progress = int((current / total) * progress_length)
     
-
-    if value.days:
-        pieces.append(f"{value.days}d")
-
-    seconds = value.seconds
-
-    if seconds >= 3600:
-        hours = int(seconds / 3600)
-        pieces.append(f"{hours}h")
-        seconds -= hours * 3600
-
-    if seconds >= 60:
-        minutes = int(seconds / 60)
-        pieces.append(f"{minutes}m")
-        seconds -= minutes * 60
-
-    if seconds > 0 or not pieces:
-        pieces.append(f"{seconds}s")
-
-    if not precision:
-        return "".join(pieces)
-
-    return "".join(pieces[:precision])
-
-
+    bar = ""
+    for i in range(progress_length):
+        if i < progress:
+            bar += progress_chars[i]
+        else:
+            bar += " "
+    return bar
 
 timer = Timer()
 
@@ -72,26 +64,44 @@ async def progress_bar(current, total, reply, start):
         diff = now - start
         if diff < 1:
             return
-        else:
-            perc = f"{current * 100 / total:.1f}%"
-            elapsed_time = round(diff)
-            speed = current / elapsed_time
-            remaining_bytes = total - current
-            if speed > 0:
-                eta_seconds = remaining_bytes / speed
-                eta = hrt(eta_seconds, precision=1)
-            else:
-                eta = "-"
-            sp = str(hrb(speed)) + "/s"
-            tot = hrb(total)
-            cur = hrb(current)
-            bar_length = 11
-            completed_length = int(current * bar_length / total)
-            remaining_length = bar_length - completed_length
-            progress_bar = "▓" * completed_length + "▒" * remaining_length
-            
-            try:
-                await reply.edit(f'`\n ╭──⌯════𝐁𝐨𝐭 𝐒𝐭𝐚𝐭𝐢𝐜𝐬═════⌯──╮ \n├⚡ {progress_bar} |﹝{perc}﹞ \n├🚀 Speed ➤ {sp} \n├📟 Processed ➤ {cur}\n├🧲 Size - ETA ➤ {tot} - {eta} \n╰─═══ ✨🦋𝐊𝐔𝐍𝐀𝐋🦋✨ ═══─╯`\n') 
-            except FloodWait as e:
-                time.sleep(e.x)
 
+        elapsed_time = round(diff)
+        speed = current / elapsed_time
+        remaining_bytes = total - current
+        eta = hrt(remaining_bytes / speed, precision=1) if speed > 0 else "-"
+        sp = f"{hrb(speed)}/s"
+        tot = hrb(total)
+        cur = hrb(current)
+        progress_bar = create_custom_bar(current, total)
+
+        try:
+            await reply.edit(
+                f'`\n'
+                f'╭──⌯════•|•𝐁𝐨𝐭 𝐒𝐭𝐚𝐭𝐢𝐜𝐬•|•════⌯──╮\n'
+                f'├⚡ **Progress:** {progress_bar}\n'
+                f'├🚀 **Speed:** {sp}\n'
+                f'├📟 **Processed:** {cur}\n'
+                f'├🧲 **Size - ETA:** {tot} - {eta}\n'
+                f'╰─═══•✨🦋𝐊𝐔𝐍𝐀𝐋🦋✨•═══─╯\n'
+                f'`'
+            )
+        except FloodWait as e:
+            time.sleep(e.x)
+
+# Example simulation function
+async def simulate_progress(reply):
+    total = 100
+    start = time.time()
+    for current in range(0, total + 1, 10):  # Simulate progress in steps of 10
+        await progress_bar(current, total, reply, start)
+        time.sleep(1)  # Simulate time delay
+
+# Example of a mock `reply` object for testing purposes
+class MockReply:
+    async def edit(self, text):
+        print(text)
+
+# Simulate the progress bar
+mock_reply = MockReply()
+import asyncio
+asyncio.run(simulate_progress(mock_reply))
